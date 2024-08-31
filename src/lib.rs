@@ -3,7 +3,6 @@
 //! This crate provides utilities for reading and parsing IMFs, a simple file format for storing 2D arrays.
 use fancy_regex::Regex;
 use std::collections::BTreeMap;
-use std::error::Error;
 use std::fs;
 
 #[derive(Clone)]
@@ -134,7 +133,7 @@ impl IMF {
     }
     fn proc_cols(file: &str) -> Result<Option<BTreeMap<i32, (u8, u8, u8)>>, String> {
         let r = Regex::new(r"(\d+\(\d*\))+").unwrap();
-        let mut colors_str: &str;
+        let colors_str: &str;
 
         match r.find(file) {
             Ok(Some(c)) => colors_str = c.as_str(),
