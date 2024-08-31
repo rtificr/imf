@@ -1,5 +1,11 @@
 [package]
 name = "imf"
+authors = ["rtificr"]
+description = "Utilities for processing .imf files"
+keywords = ["file", "map", "array"]
+repository = "https://github.com/rtificr/imf"
+categories = ["data-structures", "filesystem"]
+license = "GPL-3"
 version = "0.1.0"
 edition = "2021"
 

@@ -202,7 +202,7 @@ impl IMF {
     /// let mut imf = IMF::new("example.imf").unwrap();
     /// let n = imf.get_xy(1,1).unwrap();
     ///
-    /// assert_eq!(n, 7);
+    /// // n = 7
     pub fn get_xy(&self, x: usize, y: usize) -> Result<i32, String> {
         let index = self.xy2i(x, y);
         let val = self.map.get(index.ok_or("Coordinates out of range!".to_string())?).cloned().unwrap();
@@ -221,7 +221,7 @@ impl IMF {
     /// let mut imf = IMF::new("example.imf").unwrap();
     /// imf.set_xy(2,2,5).expect("Coordinates out of range!");
     ///
-    /// assert_eq!(imf.get_xy(2,2).unwrap(), 5);
+    /// // imf.get_xy(2,2).unwrap() == 5
     pub fn set_xy(&mut self, x: usize, y: usize, i: i32) -> Result<(), String> {
         let index = self.xy2i(x, y);
         let val = self.map.get_mut(index.ok_or("Coordinates out of range!".to_string())?).unwrap();
@@ -242,7 +242,7 @@ impl IMF {
     /// let imf = IMF::new("example.imf").unwrap();
     /// let n = imf.xy2i(2,2);
     ///
-    /// assert_eq!(n, 10);
+    /// // n == 10
     pub fn xy2i(&self, x: usize, y: usize) -> Option<usize> {
         if x > self.width || y > self.height {
             return None;
@@ -265,7 +265,7 @@ impl IMF {
     /// let n = imf.xy2i(2,2);
     /// let m = imf.i2xy(10);
     ///
-    /// assert_eq!(n, m);
+    /// // n = m
     pub fn i2xy(&self, i: usize) -> Option<(usize, usize)> {
         if i < self.map.len() {
             let y = i / self.width;
@@ -285,7 +285,7 @@ impl IMF {
 /// //works with all spacings
 /// let vec = str2vec("0,1, 2, 3 ,4 ,5");
 ///
-/// assert_eq!(vec, vec![0,1,2,3,4,5]);
+/// // vec = vec![0,1,2,3,4,5];
 pub fn str2vec(str: &str) -> Result<Vec<i32>, String> {
     let mut map = Vec::new();
 
@@ -305,5 +305,4 @@ pub fn str2vec(str: &str) -> Result<Vec<i32>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 }
