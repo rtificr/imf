@@ -6,8 +6,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
-
+use colors_transform::{Color, Rgb};
 #[derive(Clone)]
 /// Stores the version, colors, width, height and content of an Integer Media File.
 pub struct IMF {
@@ -135,7 +134,7 @@ impl IMF {
         Ok((x, y))
     }
     fn proc_cols(file: &str) -> Result<Option<BTreeMap<i32, (u8, u8, u8)>>, String> {
-        let r = Regex::new(r"(\d+\(\d*\))+").unwrap();
+        let r = Regex::new(r"(\d+\([0-9a-fA-F]{6}\))+").unwrap();
         let colors_str: &str;
 
         match r.find(file) {
@@ -147,23 +146,25 @@ impl IMF {
         let colors_list = colors_str.split(')').filter(|s| !s.is_empty()).collect::<Vec<&str>>();
         let mut color_map: BTreeMap<i32, (u8, u8, u8)> = BTreeMap::new();
 
-        //converting int to rgb
         for c in colors_list {
-            let (key, val): (i32, i32);
+            let key;
+            let val;
 
-            if let Some((key_str, val_str)) = c.split_once('(') {
+            if let Some((key_str, col_str)) = c.split_once('(') {
                 key = key_str.parse::<i32>().map_err(|_| format!("'{key_str}' not a number"))?;
-                val = val_str.parse::<i32>().map_err(|_| format!("'{val_str}' not a number"))?;
+                val = col_str;
             } else {
                 return Err(format!("Incorrect formatting on line '{c})'"));
             }
-            let (r, g, b) = (
-                ((val >> 16) & 255) as u8,
-                ((val >> 8) & 255) as u8,
-                (val & 255) as u8
-            );
 
-            color_map.insert(key, (r, g, b));
+            let hex = format!("#{val}");
+            let rgb = Rgb::from_hex_str(hex.as_str()).map_err(|_| format!("'{hex}' is not a valid hex code!"))?;
+
+            color_map.insert(key, (
+                (rgb.get_red() * 255f32) as u8,
+                (rgb.get_green() * 255f32) as u8,
+                (rgb.get_blue() * 255f32) as u8),
+            );
         }
 
         Ok(Some(color_map))
@@ -278,6 +279,7 @@ impl IMF {
         }
     }
 
+    ///Writes IMF to given filepath in .imf form
     pub fn write(&self, path: &str) -> Result<(), String> {
         let mut file = File::create(path).map_err(|e| e.to_string())?;
 
@@ -295,14 +297,16 @@ impl IMF {
                 }
             }
             2 => {
-                writeln!(file, "[v2]").unwrap();
-                writeln!(file, "{},{};", self.width, self.height).unwrap();
+                writeln!(file, "[v2]").map_err(|e| e.to_string())?;
+                writeln!(file, "{},{};", self.width, self.height).map_err(|e| e.to_string())?;
                 for col in self.colors.clone() {
                     let (index, (r, g, b)) = col;
-                    let color = rgb2int(r,g,b);
-                    writeln!(file, "{index}({color})").unwrap();
+                    let color = Rgb::from_tuple(&(r as f32, g as f32, b as f32)).to_css_hex_string()
+                        .replace('#', "");
+
+                    writeln!(file, "{index}({color})").map_err(|e| e.to_string())?;
                 }
-                writeln!(file, "[");
+                writeln!(file, "[").map_err(|e| e.to_string())?;
                 for y in 0..self.height {
                     for x in 0..self.width {
                         let index = self.xy2i(x, y).unwrap();
@@ -310,7 +314,7 @@ impl IMF {
                     }
                     writeln!(file).map_err(|e| e.to_string())?;
                 }
-                writeln!(file, "]");
+                writeln!(file, "]").map_err(|e| e.to_string())?;
             }
             _ => {}
         }
@@ -343,18 +347,6 @@ pub fn str2vec(str: &str) -> Result<Vec<i32>, String> {
     }
 
     Ok(map)
-}
-
-pub fn int2rgb(val: i32) -> (u8, u8, u8) {
-    (
-        ((val >> 16) & 255) as u8,
-        ((val >> 8) & 255) as u8,
-        (val & 255) as u8
-    )
-}
-
-pub fn rgb2int(r: u8, g: u8, b: u8) -> i32 {
-    (r as i32) << 16 | (g as i32) << 8 | (b as i32)
 }
 
 #[cfg(test)]
