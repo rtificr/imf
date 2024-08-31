@@ -16,3 +16,4 @@ include = [
 
 [dependencies]
 fancy-regex = "0.13.0"
+colors-transform = "0.2.11"
