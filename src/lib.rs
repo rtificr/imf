@@ -4,6 +4,9 @@
 use fancy_regex::Regex;
 use std::collections::BTreeMap;
 use std::fs;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
 
 #[derive(Clone)]
 /// Stores the version, colors, width, height and content of an Integer Media File.
@@ -35,16 +38,16 @@ impl IMF {
             colors: m,
             width: 8,
             height: 8,
-            map: vec![1; 64]
+            map: vec![1; 64],
         }
     }
     /// Creates new IMF from file located at filepath
     pub fn new(path: &str) -> Result<IMF, String> {
         let file_str = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': \n\t{e}"))?;
-
         let mut imf = IMF::default();
 
         let version = Self::proc_version(&file_str).map_err(|e| format!("IMF::Version: {e}"))?.unwrap_or_else(|| 1);
+        imf.version = version;
 
         imf = match version {
             1 => Self::load_v1(imf.clone(), &file_str).map_err(|e| format!("IMF::LoadV1{e}"))?,
@@ -201,7 +204,7 @@ impl IMF {
     /// let mut imf = IMF::new("example.imf").unwrap();
     /// let n = imf.get_xy(1,1).unwrap();
     ///
-    /// // n = 7
+    /// // n == 7
     pub fn get_xy(&self, x: usize, y: usize) -> Result<i32, String> {
         let index = self.xy2i(x, y);
         let val = self.map.get(index.ok_or("Coordinates out of range!".to_string())?).cloned().unwrap();
@@ -264,7 +267,7 @@ impl IMF {
     /// let n = imf.xy2i(2,2);
     /// let m = imf.i2xy(10);
     ///
-    /// // n = m
+    /// // n == m
     pub fn i2xy(&self, i: usize) -> Option<(usize, usize)> {
         if i < self.map.len() {
             let y = i / self.width;
@@ -273,6 +276,46 @@ impl IMF {
         } else {
             None
         }
+    }
+
+    pub fn write(&self, path: &str) -> Result<(), String> {
+        let mut file = File::create(path).map_err(|e| e.to_string())?;
+
+        match self.version {
+            1 => {
+                writeln!(file, "{}", self.width).map_err(|e| e.to_string())?;
+                writeln!(file, "{}", self.height).map_err(|e| e.to_string())?;
+
+                for y in 0..self.height {
+                    for x in 0..self.width {
+                        let index = self.xy2i(x, y).unwrap();
+                        write!(file, "{},", self.map.get(index).unwrap()).map_err(|e| e.to_string())?;
+                    }
+                    writeln!(file).map_err(|e| e.to_string())?;
+                }
+            }
+            2 => {
+                writeln!(file, "[v2]").unwrap();
+                writeln!(file, "{},{};", self.width, self.height).unwrap();
+                for col in self.colors.clone() {
+                    let (index, (r, g, b)) = col;
+                    let color = rgb2int(r,g,b);
+                    writeln!(file, "{index}({color})").unwrap();
+                }
+                writeln!(file, "[");
+                for y in 0..self.height {
+                    for x in 0..self.width {
+                        let index = self.xy2i(x, y).unwrap();
+                        write!(file, "{},", self.map.get(index).unwrap()).map_err(|e| e.to_string())?;
+                    }
+                    writeln!(file).map_err(|e| e.to_string())?;
+                }
+                writeln!(file, "]");
+            }
+            _ => {}
+        }
+
+        Ok(())
     }
 }
 
@@ -284,7 +327,7 @@ impl IMF {
 /// //works with all spacings
 /// let vec = str2vec("0,1, 2, 3 ,4 ,5");
 ///
-/// // vec = vec![0,1,2,3,4,5];
+/// // vec == vec![0,1,2,3,4,5];
 pub fn str2vec(str: &str) -> Result<Vec<i32>, String> {
     let mut map = Vec::new();
 
@@ -302,6 +345,25 @@ pub fn str2vec(str: &str) -> Result<Vec<i32>, String> {
     Ok(map)
 }
 
+pub fn int2rgb(val: i32) -> (u8, u8, u8) {
+    (
+        ((val >> 16) & 255) as u8,
+        ((val >> 8) & 255) as u8,
+        (val & 255) as u8
+    )
+}
+
+pub fn rgb2int(r: u8, g: u8, b: u8) -> i32 {
+    (r as i32) << 16 | (g as i32) << 8 | (b as i32)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    // #[test]
+    // fn test() {
+    //     let i = IMF::new("export2.imf").unwrap();
+    //     i.write("export2.imf").map_err(|e| println!("ERROR: {}", e)).ok();
+    // }
 }
