@@ -40,7 +40,19 @@ impl IMF {
             map: vec![1; 64],
         }
     }
-    /// Creates new IMF from file located at filepath
+    /// Creates new IMF from file located at filepath.
+    /// If you want to create a new one from existing variables, declare it like this:
+    /// ```
+    /// use imf::IMF;
+    ///
+    /// //assuming that all variables already exist
+    /// let imf = IMF {
+    ///     version,
+    ///     colors,
+    ///     width,
+    ///     height,
+    ///     map
+    /// };
     pub fn new(path: &str) -> Result<IMF, String> {
         let file_str = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': \n\t{e}"))?;
         let mut imf = IMF::default();
@@ -56,6 +68,7 @@ impl IMF {
 
         Ok(imf)
     }
+
     fn load_v1(imf: IMF, file: &str) -> Result<IMF, String> {
         let mut i = imf;
         let mut lines = file.split('\n').filter(|line| !line.trim().is_empty());
@@ -206,10 +219,9 @@ impl IMF {
     /// let n = imf.get_xy(1,1).unwrap();
     ///
     /// // n == 7
-    pub fn get_xy(&self, x: usize, y: usize) -> Result<i32, String> {
+    pub fn get_xy(&self, x: usize, y: usize) -> Option<i32> {
         let index = self.xy2i(x, y);
-        let val = self.map.get(index.ok_or("Coordinates out of range!".to_string())?).cloned().unwrap();
-        Ok(val)
+        self.map.get(index).cloned()
     }
     ///Sets number at coordinates within IMF to the number specified.
     ///See [`IMF::get_xy`]
@@ -222,16 +234,19 @@ impl IMF {
     /// use imf::IMF;
     ///
     /// let mut imf = IMF::new("example.imf").unwrap();
-    /// imf.set_xy(2,2,5).expect("Coordinates out of range!");
+    /// imf.set_xy(2,2,5);
     ///
-    /// // imf.get_xy(2,2).unwrap() == 5
-    pub fn set_xy(&mut self, x: usize, y: usize, i: i32) -> Result<(), String> {
+    /// // imf.get_xy(2,2) == 5
+    pub fn set_xy(&mut self, x: usize, y: usize, i: i32) -> bool {
         let index = self.xy2i(x, y);
-        let val = self.map.get_mut(index.ok_or("Coordinates out of range!".to_string())?).unwrap();
-        *val = i;
-        Ok(())
+        if let Some(val) = self.map.get_mut(index) {
+            *val = i;
+            true
+        } else {
+            false
+        }
     }
-    /// Converts XY coordinates to an index.
+    /// Converts XY coordinates to an index. This does not check to see if anything exists at that index.
     /// See [`IMF::i2xy`]
     /// ## Example
     /// ```
@@ -246,14 +261,10 @@ impl IMF {
     /// let n = imf.xy2i(2,2);
     ///
     /// // n == 10
-    pub fn xy2i(&self, x: usize, y: usize) -> Option<usize> {
-        if x > self.width || y > self.height {
-            return None;
-        }
-
-        Some(y * self.width + x)
+    pub fn xy2i(&self, x: usize, y: usize) -> usize {
+        y * self.width + x
     }
-    /// Converts XY coordinates to an index.
+    /// Converts index to XY coordinates.
     /// See [`IMF::xy2i`]
     /// ## Example
     /// ```
@@ -290,7 +301,7 @@ impl IMF {
 
                 for y in 0..self.height {
                     for x in 0..self.width {
-                        let index = self.xy2i(x, y).unwrap();
+                        let index = self.xy2i(x, y);
                         write!(file, "{},", self.map.get(index).unwrap()).map_err(|e| e.to_string())?;
                     }
                     writeln!(file).map_err(|e| e.to_string())?;
@@ -309,7 +320,7 @@ impl IMF {
                 writeln!(file, "[").map_err(|e| e.to_string())?;
                 for y in 0..self.height {
                     for x in 0..self.width {
-                        let index = self.xy2i(x, y).unwrap();
+                        let index = self.xy2i(x, y);
                         write!(file, "{},", self.map.get(index).unwrap()).map_err(|e| e.to_string())?;
                     }
                     writeln!(file).map_err(|e| e.to_string())?;
