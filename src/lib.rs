@@ -40,7 +40,19 @@ impl IMF {
             map: vec![1; 64],
         }
     }
-    /// Creates new IMF from file located at filepath
+    /// Creates new IMF from file located at filepath.
+    /// If you want to create a new one from existing variables, declare it like this:
+    /// ```
+    /// use imf::IMF;
+    ///
+    /// //assuming that all variables already exist
+    /// let imf = IMF {
+    ///     version,
+    ///     colors,
+    ///     width,
+    ///     height,
+    ///     map
+    /// };
     pub fn new(path: &str) -> Result<IMF, String> {
         let file_str = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': \n\t{e}"))?;
         let mut imf = IMF::default();
@@ -56,6 +68,7 @@ impl IMF {
 
         Ok(imf)
     }
+
     fn load_v1(imf: IMF, file: &str) -> Result<IMF, String> {
         let mut i = imf;
         let mut lines = file.split('\n').filter(|line| !line.trim().is_empty());
@@ -206,10 +219,9 @@ impl IMF {
     /// let n = imf.get_xy(1,1).unwrap();
     ///
     /// // n == 7
-    pub fn get_xy(&self, x: usize, y: usize) -> Result<i32, String> {
+    pub fn get_xy(&self, x: usize, y: usize) -> Option<i32> {
         let index = self.xy2i(x, y);
-        let val = self.map.get(index.ok_or("Coordinates out of range!".to_string())?).cloned().unwrap();
-        Ok(val)
+        self.map.get(index).ok()
     }
     ///Sets number at coordinates within IMF to the number specified.
     ///See [`IMF::get_xy`]
