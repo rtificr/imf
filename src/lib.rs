@@ -220,8 +220,7 @@ impl IMF {
     ///
     /// // n == 7
     pub fn get_xy(&self, x: usize, y: usize) -> Option<i32> {
-        if x >= self.width || y >= self.height { return None }
-        let index = self.xy2i(x, y);
+        let index = self.xy2i(x, y)?;
         self.map.get(index).cloned()
     }
     ///Sets number at coordinates within IMF to the number specified.
@@ -239,17 +238,13 @@ impl IMF {
     ///
     /// // imf.get_xy(2,2) == 5
     pub fn set_xy(&mut self, x: usize, y: usize, i: i32) -> bool {
-        let index = self.xy2i(x, y);
-        if index > self.map.len()
-            || x >= self.width
-            || y >= self.height
-            { return false }
-        if let Some(val) = self.map.get_mut(index) {
-            *val = i;
-            true
-        } else {
-            false
+        if let Some(index) = self.xy2i(x, y) {
+            if let Some(val) = self.map.get_mut(index){
+                *val = i;
+                true;
+            }
         }
+        false
     }
     /// Converts XY coordinates to an index. This does not check to see if anything exists at that index.
     /// See [`IMF::i2xy`]
@@ -266,8 +261,10 @@ impl IMF {
     /// let n = imf.xy2i(2,2);
     ///
     /// // n == 10
-    pub fn xy2i(&self, x: usize, y: usize) -> usize {
-        y * self.width + x
+    pub fn xy2i(&self, x: usize, y: usize) -> Option<usize> {
+        if x >= self.width || y >= self.height { return None }
+
+        Some(y * self.width + x)
     }
     /// Converts index to XY coordinates.
     /// See [`IMF::xy2i`]
@@ -307,7 +304,7 @@ impl IMF {
                 for y in 0..self.height {
                     for x in 0..self.width {
                         let index = self.xy2i(x, y);
-                        write!(file, "{},", self.map.get(index).unwrap()).map_err(|e| e.to_string())?;
+                        write!(file, "{},", self.map.get(index.expect("V1 Writing failed!")).unwrap()).map_err(|e| e.to_string())?;
                     }
                     writeln!(file).map_err(|e| e.to_string())?;
                 }
@@ -326,7 +323,7 @@ impl IMF {
                 for y in 0..self.height {
                     for x in 0..self.width {
                         let index = self.xy2i(x, y);
-                        write!(file, "{},", self.map.get(index).unwrap()).map_err(|e| e.to_string())?;
+                        write!(file, "{},", self.map.get(index.expect("V2 Writing failed!")).unwrap()).map_err(|e| e.to_string())?;
                     }
                     writeln!(file).map_err(|e| e.to_string())?;
                 }
@@ -367,8 +364,6 @@ pub fn str2vec(str: &str) -> Result<Vec<i32>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // #[test]
     // fn test() {
     //     let i = IMF::new("export2.imf").unwrap();
