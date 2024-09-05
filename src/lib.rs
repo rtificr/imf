@@ -220,6 +220,7 @@ impl IMF {
     ///
     /// // n == 7
     pub fn get_xy(&self, x: usize, y: usize) -> Option<i32> {
+        if x >= self.width || y >= self.height { return None }
         let index = self.xy2i(x, y);
         self.map.get(index).cloned()
     }
@@ -239,6 +240,10 @@ impl IMF {
     /// // imf.get_xy(2,2) == 5
     pub fn set_xy(&mut self, x: usize, y: usize, i: i32) -> bool {
         let index = self.xy2i(x, y);
+        if index > self.map.len()
+            || x >= self.width
+            || y >= self.height
+            { return false }
         if let Some(val) = self.map.get_mut(index) {
             *val = i;
             true
