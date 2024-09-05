@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io::Write;
 use colors_transform::{Color, Rgb};
 #[derive(Clone)]
+#[derive(Debug)]
 /// Stores the version, colors, width, height and content of an Integer Media File.
 pub struct IMF {
     pub version: u8,
