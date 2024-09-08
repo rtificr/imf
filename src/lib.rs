@@ -294,46 +294,46 @@ impl IMF {
     }
 
     ///Writes IMF to given filepath in .imf form
-    pub fn write(&self, path: &str) -> Result<(), String> {
-        let mut file = File::create(path).map_err(|e| e.to_string())?;
+    pub fn write(&self, path: &str) -> Result<String, String> {
+        let mut result = String::new();
 
         match self.version {
             1 => {
-                writeln!(file, "{}", self.width).map_err(|e| e.to_string())?;
-                writeln!(file, "{}", self.height).map_err(|e| e.to_string())?;
+                writeln!(result, "{}", self.width).map_err(|e| e.to_string())?;
+                writeln!(result, "{}", self.height).map_err(|e| e.to_string())?;
 
                 for y in 0..self.height {
                     for x in 0..self.width {
                         let index = self.xy2i(x, y);
-                        write!(file, "{},", self.map.get(index.expect("V1 Writing failed!")).unwrap()).map_err(|e| e.to_string())?;
+                        write!(result, "{},", self.map.get(index.expect("V1 Writing failed!")).unwrap()).map_err(|e| e.to_string())?;
                     }
-                    writeln!(file).map_err(|e| e.to_string())?;
+                    writeln!(result).map_err(|e| e.to_string())?;
                 }
             }
             2 => {
-                writeln!(file, "[v2]").map_err(|e| e.to_string())?;
-                writeln!(file, "{},{};", self.width, self.height).map_err(|e| e.to_string())?;
+                writeln!(result, "[v2]").map_err(|e| e.to_string())?;
+                writeln!(result, "{},{};", self.width, self.height).map_err(|e| e.to_string())?;
                 for col in self.colors.clone() {
                     let (index, (r, g, b)) = col;
                     let color = Rgb::from_tuple(&(r as f32, g as f32, b as f32)).to_css_hex_string()
                         .replace('#', "");
 
-                    writeln!(file, "{index}({color})").map_err(|e| e.to_string())?;
+                    writeln!(result, "{index}({color})").map_err(|e| e.to_string())?;
                 }
-                writeln!(file, "[").map_err(|e| e.to_string())?;
+                writeln!(result, "[").map_err(|e| e.to_string())?;
                 for y in 0..self.height {
                     for x in 0..self.width {
                         let index = self.xy2i(x, y);
-                        write!(file, "{},", self.map.get(index.expect("V2 Writing failed!")).unwrap()).map_err(|e| e.to_string())?;
+                        write!(result, "{},", self.map.get(index.expect("V2 Writing failed!")).unwrap()).map_err(|e| e.to_string())?;
                     }
-                    writeln!(file).map_err(|e| e.to_string())?;
+                    writeln!(result).map_err(|e| e.to_string())?;
                 }
-                writeln!(file, "]").map_err(|e| e.to_string())?;
+                writeln!(result, "]").map_err(|e| e.to_string())?;
             }
             _ => {}
         }
 
-        Ok(())
+        Ok(result)
     }
 }
 
