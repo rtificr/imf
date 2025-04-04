@@ -15,7 +15,7 @@ impl std::fmt::Debug for IMF {
         writeln!(f, "  width: {},", self.width)?;
         writeln!(f, "  height: {},", self.height)?;
         writeln!(f, "  map: [")?;
-        for (i, map) in self.layers.iter().enumerate().rev()  {
+        for (i, map) in self.layers.iter().enumerate().rev() {
             writeln!(f, "    layer {i}")?;
             for chunk in map.chunks(self.width as usize) {
                 writeln!(f, "      {:?},", chunk)?;
@@ -33,11 +33,18 @@ impl IMF {
             layers: vec![vec![fill; (width * height) as usize]],
         }
     }
-    pub fn new_with_layers(width: DimensionType, height: DimensionType, fill: Vec<Tile>) -> Result<IMF, ()> {
+    pub fn new_with_layers(
+        width: DimensionType,
+        height: DimensionType,
+        fill: Vec<Tile>,
+    ) -> Result<IMF, ()> {
         Ok(IMF {
             width,
             height,
-            layers: fill.iter().map(|f| vec![f.clone(); (width * height) as usize]).collect(),
+            layers: fill
+                .iter()
+                .map(|f| vec![f.clone(); (width * height) as usize])
+                .collect(),
         })
     }
 
@@ -93,7 +100,11 @@ impl IMF {
             }
             layers.push(layer);
         }
-        Some(IMF { width, height, layers })
+        Some(IMF {
+            width,
+            height,
+            layers,
+        })
     }
 
     pub fn get(&self, x: DimensionType, y: DimensionType, layer: usize) -> Option<&Tile> {
@@ -101,7 +112,13 @@ impl IMF {
         let index = (y * self.width + x) as usize;
         layer.get(index)
     }
-    pub fn set(&mut self, x: DimensionType, y: DimensionType, layer: usize, tile: Tile) -> Option<()> {
+    pub fn set(
+        &mut self,
+        x: DimensionType,
+        y: DimensionType,
+        layer: usize,
+        tile: Tile,
+    ) -> Option<()> {
         let layer = self.layers.get_mut(layer)?;
         let index = (y * self.width + x) as usize;
         if index < layer.len() {
@@ -160,6 +177,28 @@ impl Tile {
     pub fn is_sides(&self) -> bool {
         matches!(self, Tile::Sides(_))
     }
+    pub fn force_int(&self) -> TileType {
+        match self {
+            Tile::Int(t) => *t,
+            Tile::Sides(Sides {
+                n,
+                e: _,
+                s: _,
+                w: _,
+            }) => *n,
+        }
+    }
+    pub fn force_sides(&self) -> Sides {
+        match self {
+            Tile::Int(t) => Sides {
+                n: *t,
+                e: *t,
+                s: *t,
+                w: *t,
+            },
+            Tile::Sides(sides) => sides.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,7 +215,8 @@ mod tests {
 
     #[test]
     fn test_imf() {
-        let mut imf = IMF::new_with_layers(3, 3, vec![Tile::Int(0), Tile::Int(1), Tile::Int(2)]).unwrap();
+        let mut imf =
+            IMF::new_with_layers(3, 3, vec![Tile::Int(0), Tile::Int(1), Tile::Int(2)]).unwrap();
         imf.set(1, 0, 0, Tile::Int(1)).unwrap();
         println!("{:?}", imf);
         let bytes = imf.to_bytes();
