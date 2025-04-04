@@ -108,8 +108,11 @@ impl IMF {
     }
 
     pub fn get(&self, x: DimensionType, y: DimensionType, layer: usize) -> Option<&Tile> {
+        if x >= self.width || y >= self.height {
+            return None;
+        }
         let layer = self.layers.get(layer)?;
-        let index = (y * self.width + x) as usize;
+        let index = y as usize * self.width as usize + x as usize;
         layer.get(index)
     }
     pub fn set(
@@ -119,8 +122,11 @@ impl IMF {
         layer: usize,
         tile: Tile,
     ) -> Option<()> {
+        if x >= self.width || y >= self.height {
+            return None;
+        }
         let layer = self.layers.get_mut(layer)?;
-        let index = (y * self.width + x) as usize;
+        let index = y as usize * self.width as usize + x as usize;
         if index < layer.len() {
             layer[index] = tile;
             Some(())
