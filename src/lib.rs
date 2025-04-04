@@ -1,38 +1,39 @@
 use bytebuilder::{builder::ByteBuilder, reader::ByteReader, traits::Byteable};
 
 pub type TileType = i16;
+pub type DimensionType = u32;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct IMF {
-    pub width: u32,
-    pub height: u32,
+    pub width: DimensionType,
+    pub height: DimensionType,
     pub layers: Vec<Vec<Tile>>,
 }
 impl std::fmt::Debug for IMF {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "IMF {{")?;
-        writeln!(f, "    width: {},", self.width)?;
-        writeln!(f, "    height: {},", self.height)?;
-        writeln!(f, "    map: [")?;
-        for map in self.layers.iter() {
+        writeln!(f, "  width: {},", self.width)?;
+        writeln!(f, "  height: {},", self.height)?;
+        writeln!(f, "  map: [")?;
+        for (i, map) in self.layers.iter().enumerate().rev()  {
+            writeln!(f, "    layer {i}")?;
             for chunk in map.chunks(self.width as usize) {
-                writeln!(f, "        {:?},", chunk)?;
+                writeln!(f, "      {:?},", chunk)?;
             }
         }
-
-        writeln!(f, "    ]")?;
+        writeln!(f, "  ]")?;
         writeln!(f, "}}")
     }
 }
 impl IMF {
-    pub fn new(width: u32, height: u32, fill: Tile) -> IMF {
+    pub fn new(width: DimensionType, height: DimensionType, fill: Tile) -> IMF {
         IMF {
             width,
             height,
             layers: vec![vec![fill; (width * height) as usize]],
         }
     }
-    pub fn new_with_layers(width: u32, height: u32, fill: Vec<Tile>) -> Result<IMF, ()> {
+    pub fn new_with_layers(width: DimensionType, height: DimensionType, fill: Vec<Tile>) -> Result<IMF, ()> {
         Ok(IMF {
             width,
             height,
@@ -94,6 +95,28 @@ impl IMF {
         }
         Some(IMF { width, height, layers })
     }
+
+    pub fn get(&self, x: DimensionType, y: DimensionType, layer: usize) -> Option<&Tile> {
+        let layer = self.layers.get(layer)?;
+        let index = (y * self.width + x) as usize;
+        layer.get(index)
+    }
+    pub fn set(&mut self, x: DimensionType, y: DimensionType, layer: usize, tile: Tile) -> Option<()> {
+        let layer = self.layers.get_mut(layer)?;
+        let index = (y * self.width + x) as usize;
+        if index < layer.len() {
+            layer[index] = tile;
+            Some(())
+        } else {
+            None
+        }
+    }
+    pub fn get_layer(&self, layer: usize) -> Option<&[Tile]> {
+        self.layers.get(layer).map(|l| l.as_slice())
+    }
+    pub fn get_layer_mut(&mut self, layer: usize) -> Option<&mut [Tile]> {
+        self.layers.get_mut(layer).map(|l| l.as_mut_slice())
+    }
 }
 
 impl Byteable for IMF {
@@ -153,7 +176,8 @@ mod tests {
 
     #[test]
     fn test_imf() {
-        let imf = IMF::new_with_layers(3, 3, vec![Tile::Int(0), Tile::Int(1), Tile::Int(2)]).unwrap();
+        let mut imf = IMF::new_with_layers(3, 3, vec![Tile::Int(0), Tile::Int(1), Tile::Int(2)]).unwrap();
+        imf.set(1, 0, 0, Tile::Int(1)).unwrap();
         println!("{:?}", imf);
         let bytes = imf.to_bytes();
         let imf2 = IMF::from_bytes(&bytes).unwrap();
