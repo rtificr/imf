@@ -1,373 +1,164 @@
-//! # Integer Media File Parser
-//!
-//! This crate provides utilities for reading and parsing IMFs, a simple file format for storing 2D arrays.
-use fancy_regex::Regex;
-use std::collections::BTreeMap;
-use std::fs;
-use std::fs::File;
-use std::io::Write;
-use colors_transform::{Color, Rgb};
-#[derive(Clone)]
-#[derive(Debug)]
-/// Stores the version, colors, width, height and content of an Integer Media File.
+use bytebuilder::{builder::ByteBuilder, reader::ByteReader, traits::BytesTrait};
+
+pub type TileType = i16;
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct IMF {
-    pub version: u8,
-    pub colors: BTreeMap<i32, (u8, u8, u8)>,
-    pub width: usize,
-    pub height: usize,
-    pub map: Vec<i32>,
+    pub width: u32,
+    pub height: u32,
+    pub layers: Vec<Vec<Tile>>,
 }
+impl std::fmt::Debug for IMF {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "IMF {{")?;
+        writeln!(f, "    width: {},", self.width)?;
+        writeln!(f, "    height: {},", self.height)?;
+        writeln!(f, "    map: [")?;
+        for map in self.layers.iter() {
+            for chunk in map.chunks(self.width as usize) {
+                writeln!(f, "        {:?},", chunk)?;
+            }
+        }
 
+        writeln!(f, "    ]")?;
+        writeln!(f, "}}")
+    }
+}
 impl IMF {
-    /// Returns an IMF filled with default values.
-    pub fn default() -> IMF {
-        let mut m: BTreeMap<i32, (u8, u8, u8)> = BTreeMap::new();
-        m.insert(0, (0, 0, 0));
-        m.insert(1, (127, 127, 127));
-        m.insert(2, (255, 255, 255));
-        m.insert(3, (255, 0, 0));
-        m.insert(4, (255, 127, 0));
-        m.insert(5, (255, 255, 0));
-        m.insert(6, (0, 255, 0));
-        m.insert(7, (0, 0, 255));
-        m.insert(8, (127, 0, 255));
-        m.insert(9, (255, 0, 255));
-
+    pub fn new(width: u32, height: u32, fill: Tile) -> IMF {
         IMF {
-            version: 1,
-            colors: m,
-            width: 8,
-            height: 8,
-            map: vec![1; 64],
+            width,
+            height,
+            layers: vec![vec![fill; (width * height) as usize]],
         }
     }
-    /// Creates new IMF from file located at filepath.
-    /// If you want to create a new one from existing variables, declare it like this:
-    /// ```
-    /// use imf::IMF;
-    ///
-    /// //assuming that all variables already exist
-    /// let imf = IMF {
-    ///     version,
-    ///     colors,
-    ///     width,
-    ///     height,
-    ///     map
-    /// };
-    pub fn new(path: &str) -> Result<IMF, String> {
-        let file_str = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': \n\t{e}"))?;
-        let mut imf = IMF::default();
-
-        let version = Self::proc_version(&file_str).map_err(|e| format!("IMF::Version: {e}"))?.unwrap_or_else(|| 1);
-        imf.version = version;
-
-        imf = match version {
-            1 => Self::load_v1(imf.clone(), &file_str).map_err(|e| format!("IMF::LoadV1{e}"))?,
-            2 => Self::load_v2(imf.clone(), &file_str).map_err(|e| format!("IMF::LoadV2{e}"))?,
-            _ => return Err("Incompatible IMF version!".to_string())
-        };
-
-        Ok(imf)
+    pub fn new_with_layers(width: u32, height: u32, fill: Vec<Tile>) -> Result<IMF, ()> {
+        Ok(IMF {
+            width,
+            height,
+            layers: fill.iter().map(|f| vec![f.clone(); (width * height) as usize]).collect(),
+        })
     }
 
-    fn load_v1(imf: IMF, file: &str) -> Result<IMF, String> {
-        let mut i = imf;
-        let mut lines = file.split('\n').filter(|line| !line.trim().is_empty());
-
-        let width = lines.next().unwrap().parse().map_err(|_| "::Dimensions: Width not a number")?;
-        let height = lines.next().unwrap().parse().map_err(|_| "::Dimensions: Height not a number")?;
-
-        let mut map_str = String::new();
-
-        while let Some(line) = lines.next() {
-            map_str.push_str(line)
-        }
-
-        let map_arr = str2vec(map_str.as_str()).map_err(|e| format!("::Map: {e}"))?;
-
-        let correct_size = width * height;
-
-        if map_arr.len() != correct_size {
-            let indic = if map_arr.len() > correct_size { "many" } else { "few" };
-            return Err(format!("::Map: Too {indic} numbers in list"));
-        }
-
-        i.width = width;
-        i.height = height;
-        i.map = map_arr;
-
-        Ok(i)
-    }
-    fn load_v2(imf: IMF, file: &str) -> Result<IMF, String> {
-        let mut i = imf;
-
-        let buffer = file.lines().fold(String::new(), |mut acc, line| {
-            acc.push_str(line);
-            acc
-        });
-
-        let clean_file = buffer.as_str();
-
-        let col_map = Self::proc_cols(&clean_file).map_err(|e| format!("::Colors: {e}"))?;
-        let (width, height) = Self::proc_dim(&clean_file).map_err(|e| format!("::Dimensions: {e}"))?;
-        let map = Self::proc_map(&clean_file, width, height).map_err(|e| format!("::Map: {e}"))?;
-
-        i.width = width;
-        i.height = height;
-        i.map = map;
-
-        if col_map.is_some() { i.colors = col_map.unwrap() }
-
-        Ok(i)
-    }
-
-    fn proc_version(file: &str) -> Result<Option<u8>, String> {
-        let r = Regex::new(r"(?i)(?:\[v)(\d+)(?:])").unwrap();
-
-        let version = match r.captures(file) {
-            Ok(Some(m)) => m.get(1).unwrap().as_str(),
-            Ok(None) => return Ok(None),
-            Err(_) => return Err("Regex matching error".to_string())
-        };
-
-        Ok(version.parse().ok())
-    }
-    fn proc_dim(file: &str) -> Result<(usize, usize), String> {
-        // matches with 'width/height'
-        let r = Regex::new(r"\d+,\d+(?=\s*;)").unwrap();
-
-        let dim_str = r.find(file).map_err(|_| "Regex matching error")?;
-        if dim_str.is_none() { return Err("Dimensions not found".to_string()); }
-
-        let dims: Vec<&str> = dim_str.unwrap().as_str().split(',').collect();
-        if dims.len() != 2 { return Err("Invalid amount of dimensions".to_string()); }
-
-        let x = dims[0].parse().map_err(|_| "Width is not a number")?;
-        let y = dims[1].parse().map_err(|_| "Height is not a number")?;
-
-        Ok((x, y))
-    }
-    fn proc_cols(file: &str) -> Result<Option<BTreeMap<i32, (u8, u8, u8)>>, String> {
-        let r = Regex::new(r"(\d+\([0-9a-fA-F]{6}\))+").unwrap();
-        let colors_str: &str;
-
-        match r.find(file) {
-            Ok(Some(c)) => colors_str = c.as_str(),
-            Ok(None) => return Ok(None),
-            Err(_) => return Err("Regex matching error".to_string())
-        }
-
-        let colors_list = colors_str.split(')').filter(|s| !s.is_empty()).collect::<Vec<&str>>();
-        let mut color_map: BTreeMap<i32, (u8, u8, u8)> = BTreeMap::new();
-
-        for c in colors_list {
-            let key;
-            let val;
-
-            if let Some((key_str, col_str)) = c.split_once('(') {
-                key = key_str.parse::<i32>().map_err(|_| format!("'{key_str}' not a number"))?;
-                val = col_str;
-            } else {
-                return Err(format!("Incorrect formatting on line '{c})'"));
-            }
-
-            let hex = format!("#{val}");
-            let rgb = Rgb::from_hex_str(hex.as_str()).map_err(|_| format!("'{hex}' is not a valid hex code!"))?;
-
-            color_map.insert(key, (
-                (rgb.get_red() * 255f32) as u8,
-                (rgb.get_green() * 255f32) as u8,
-                (rgb.get_blue() * 255f32) as u8),
-            );
-        }
-
-        Ok(Some(color_map))
-    }
-    fn proc_map(file: &str, w: usize, h: usize) -> Result<Vec<i32>, String> {
-        let r = Regex::new(r"(?<=\[)(\d+,?)+(?=\])").unwrap();
-
-        let map_str: &str = match r.find(file).expect("Regex matching error") {
-            Some(m) => m.as_str(),
-            None => return Err("Integer list not found".to_string())
-        };
-
-        let map_arr = str2vec(map_str)?;
-
-        if map_arr.len() != w * h {
-            let indic = if map_arr.len() < w * h { "many" } else { "few" };
-            return Err(format!("Too {indic} numbers in list"));
-        }
-
-        Ok(map_arr.to_vec())
-    }
-
-    ///Returns number found at coordinates within IMF.
-    ///See [`IMF::set_xy`]
-    /// ## Arguments
-    /// * `x` - The X coordinate
-    /// * `y` - The Y coordinate
-    ///
-    ///## Example
-    ///```
-    /// use imf::IMF;
-    /// //example.imf:
-    /// //1,0,1,5,
-    /// //4,7,3,3,
-    /// //9,2,5,6,
-    /// //0,5,8,2
-    ///
-    /// let mut imf = IMF::new("example.imf").unwrap();
-    /// let n = imf.get_xy(1,1).unwrap();
-    ///
-    /// // n == 7
-    pub fn get_xy(&self, x: usize, y: usize) -> Option<i32> {
-        let index = self.xy2i(x, y)?;
-        self.map.get(index).cloned()
-    }
-    ///Sets number at coordinates within IMF to the number specified.
-    ///See [`IMF::get_xy`]
-    /// ## Arguments
-    /// * `x` - The X coordinate
-    /// * `y` - The Y coordinate
-    /// * `i` - What the number will be set to
-    ///## Example
-    ///```
-    /// use imf::IMF;
-    ///
-    /// let mut imf = IMF::new("example.imf").unwrap();
-    /// imf.set_xy(2,2,5);
-    ///
-    /// // imf.get_xy(2,2) == 5
-    pub fn set_xy(&mut self, x: usize, y: usize, i: i32) -> bool {
-        if let Some(index) = self.xy2i(x, y) {
-            if let Some(val) = self.map.get_mut(index){
-                *val = i;
-                true;
-            }
-        }
-        false
-    }
-    /// Converts XY coordinates to an index. This does not check to see if anything exists at that index.
-    /// See [`IMF::i2xy`]
-    /// ## Example
-    /// ```
-    /// use imf::IMF;
-    /// //example.imf:
-    /// //1,0,1,5,
-    /// //4,7,3,3,
-    /// //9,2,5,6,
-    /// //0,5,8,2
-    ///
-    /// let imf = IMF::new("example.imf").unwrap();
-    /// let n = imf.xy2i(2,2);
-    ///
-    /// // n == 10
-    pub fn xy2i(&self, x: usize, y: usize) -> Option<usize> {
-        if x >= self.width || y >= self.height { return None }
-
-        Some(y * self.width + x)
-    }
-    /// Converts index to XY coordinates.
-    /// See [`IMF::xy2i`]
-    /// ## Example
-    /// ```
-    /// use imf::IMF;
-    /// //example.imf:
-    /// //1,0,1,5,
-    /// //4,7,3,3,
-    /// //9,2,5,6,
-    /// //0,5,8,2
-    ///
-    /// let imf = IMF::new("example.imf").unwrap();
-    /// let n = imf.xy2i(2,2);
-    /// let m = imf.i2xy(10);
-    ///
-    /// // n == m
-    pub fn i2xy(&self, i: usize) -> Option<(usize, usize)> {
-        if i < self.map.len() {
-            let y = i / self.width;
-            let x = i % self.width;
-            Some((x, y))
-        } else {
-            None
-        }
-    }
-
-    ///Writes IMF to given filepath in .imf form
-    pub fn write(&self) -> Result<String, String> {
-        let mut result = String::new();
-
-        match self.version {
-            1 => {
-                result.push_str(format!("{}\n", self.width).as_str());
-                result.push_str(format!("{}\n", self.height).as_str());
-
-                for y in 0..self.height {
-                    for x in 0..self.width {
-                        let index = self.xy2i(x, y);
-                        result.push_str(format!("{},", self.map.get(index.expect("V1 Writing failed!")).unwrap()).as_str());
+    pub(crate) fn ser_v3(&self) -> Vec<u8> {
+        let mut bb = ByteBuilder::new();
+        bb.push_u8(3);
+        bb.push_u32(self.width);
+        bb.push_u32(self.height);
+        bb.push_u32(self.layers.len() as u32);
+        for map in &self.layers {
+            for tile in map {
+                match tile {
+                    Tile::Int(t) => {
+                        bb.push_u8(0);
+                        bb.push_i16(*t)
                     }
-                    result.push_str("\n");
-                }
-            }
-            2 => {
-                result.push_str("[v2]\n");
-                result.push_str(format!("{},{};\n", self.width, self.height).as_str());
-                for col in self.colors.clone() {
-                    let (index, (r, g, b)) = col;
-                    let color = Rgb::from_tuple(&(r as f32, g as f32, b as f32)).to_css_hex_string()
-                        .replace('#', "");
-
-                    result.push_str(format!("{index}({color})\n").as_str());
-                }
-                result.push_str("[\n");
-                for y in 0..self.height {
-                    for x in 0..self.width {
-                        let index = self.xy2i(x, y);
-                        result.push_str(format!("{},", self.map.get(index.expect("V2 Writing failed!")).unwrap()).as_str());
+                    Tile::Sides(sides) => {
+                        bb.push_u8(1);
+                        bb.push_i16(sides.n);
+                        bb.push_i16(sides.e);
+                        bb.push_i16(sides.s);
+                        bb.push_i16(sides.w);
                     }
-                    result.push_str("\n");
                 }
-                result.push_str("]\n");
             }
-            _ => {}
         }
+        bb.bytes
+    }
 
-        Ok(result)
+    pub(crate) fn deser_v3(br: &mut ByteReader) -> Option<Self> {
+        let width = br.read_u32()?;
+        let height = br.read_u32()?;
+        let layer_count = br.read_u32()?;
+        let mut layers = Vec::new();
+        for _ in 0..layer_count {
+            let mut layer = Vec::new();
+            for _ in 0..(width * height) {
+                let tile_type = br.read_u8()?;
+                match tile_type {
+                    0 => {
+                        let t = br.read_i16()?;
+                        layer.push(Tile::Int(t));
+                    }
+                    1 => {
+                        let n = br.read_i16()?;
+                        let e = br.read_i16()?;
+                        let s = br.read_i16()?;
+                        let w = br.read_i16()?;
+                        layer.push(Tile::Sides(Sides { n, e, s, w }));
+                    }
+                    _ => return None,
+                }
+            }
+            layers.push(layer);
+        }
+        Some(IMF { width, height, layers })
     }
 }
 
-/// Converts string to vector of integers
-/// ## Example
-/// ```
-/// use imf::str2vec;
-///
-/// //works with all spacings
-/// let vec = str2vec("0,1, 2, 3 ,4 ,5");
-///
-/// // vec == vec![0,1,2,3,4,5];
-pub fn str2vec(str: &str) -> Result<Vec<i32>, String> {
-    let mut map = Vec::new();
-
-    for item in str.split(',') {
-        let t = item.trim();
-
-        if t.is_empty() { continue; };
-
-        match t.parse::<i32>() {
-            Ok(n) => map.push(n),
-            Err(_) => return Err(format!("'{t}' is not a number!"))
-        }
+impl BytesTrait for IMF {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.ser_v3()
     }
 
-    Ok(map)
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let mut br = ByteReader::new(bytes);
+        let version = br.read_u8()?;
+        match version {
+            3 => IMF::deser_v3(&mut br),
+            _ => None,
+        }
+    }
+}
+
+impl Default for IMF {
+    fn default() -> Self {
+        IMF::new(8, 8, Tile::Int(0))
+    }
+}
+#[derive(Clone, PartialEq, Eq)]
+pub enum Tile {
+    Int(TileType),
+    Sides(Sides),
+}
+impl std::fmt::Debug for Tile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Tile::Int(t) => write!(f, "i{}", t),
+            Tile::Sides(sides) => write!(f, "s[{:?}]", sides),
+        }
+    }
+}
+
+impl Tile {
+    pub fn is_int(&self) -> bool {
+        matches!(self, Tile::Int(_))
+    }
+    pub fn is_sides(&self) -> bool {
+        matches!(self, Tile::Sides(_))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sides {
+    pub n: TileType,
+    pub e: TileType,
+    pub s: TileType,
+    pub w: TileType,
 }
 
 #[cfg(test)]
 mod tests {
-    // #[test]
-    // fn test() {
-    //     let i = IMF::new("export2.imf").unwrap();
-    //     i.write("export2.imf").map_err(|e| println!("ERROR: {}", e)).ok();
-    // }
+    use super::*;
+
+    #[test]
+    fn test_imf() {
+        let imf = IMF::new_with_layers(3, 3, vec![Tile::Int(0), Tile::Int(1), Tile::Int(2)]).unwrap();
+        println!("{:?}", imf);
+        let bytes = imf.to_bytes();
+        let imf2 = IMF::from_bytes(&bytes).unwrap();
+        assert_eq!(imf.width, imf2.width);
+        assert_eq!(imf.height, imf2.height);
+        assert_eq!(imf.layers, imf2.layers);
+    }
 }
