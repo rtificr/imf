@@ -96,7 +96,7 @@ impl IMF {
     }
 }
 
-impl BytesTrait for IMF {
+impl Byteable for IMF {
     fn to_bytes(&self) -> Vec<u8> {
         self.ser_v3()
     }
