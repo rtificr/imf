@@ -1,4 +1,4 @@
-use bytebuilder::{builder::ByteBuilder, reader::ByteReader, traits::BytesTrait};
+use bytebuilder::{builder::ByteBuilder, reader::ByteReader, traits::Byteable};
 
 pub type TileType = i16;
 
